@@ -28,16 +28,8 @@ def build_model_reference_prompt(model_ref: Dict[str, Any], image_mapping: Dict[
         else:
             parts.append("Keep the model's face from the model reference image exactly as shown.")
     elif face_action == "generate":
-        new_model_parts = []
-        if model_ref.get("ethnicity"):
-            new_model_parts.append(f"ethnicity: {model_ref['ethnicity']}")
-        if model_ref.get("hair_color"):
-            new_model_parts.append(f"hair color: {model_ref['hair_color']}")
-        if model_ref.get("age"):
-            new_model_parts.append(f"age: {model_ref['age']}")
-        
-        if new_model_parts:
-            parts.append(f"Generate a new model with: {', '.join(new_model_parts)}.")
+        if model_ref.get("new_model_description"):
+            parts.append(f"Generate a new model with the following characteristics: {model_ref['new_model_description']}.")
         else:
             parts.append("Generate a new model face.")
     
@@ -49,30 +41,16 @@ def build_outfit_prompt(outfit: Dict[str, Any], image_mapping: Dict[str, str] = 
     parts = []
     image_mapping = image_mapping or {}
     
-    # Clothing preservation instruction - IMPORTANT: Outfit image REPLACES model's clothing
+    # Clothing instruction - IMPORTANT: Outfit image REPLACES model's clothing
     if outfit.get("image_url"):
-        preservation = outfit.get("preservation_level", "strict")
         outfit_ref = image_mapping.get("outfit", "the outfit reference image")
-        
-        if preservation == "strict":
-            parts.append(f"CRITICAL REQUIREMENT: REPLACE the model's clothing with the outfit from {outfit_ref}. Preserve the exact clothing from {outfit_ref} - maintain exact texture, wrinkles, colors, and details.")
-        else:
-            parts.append(f"REPLACE the model's clothing with the outfit from {outfit_ref}. Preserve the clothing design from {outfit_ref}, allowing natural lighting integration.")
+        parts.append(f"CRITICAL REQUIREMENT: REPLACE the model's clothing with the outfit from {outfit_ref}. Maintain the clothing design, texture, and details from {outfit_ref}.")
     elif outfit.get("text_description"):
-        preservation = outfit.get("preservation_level", "strict")
-        if preservation == "strict":
-            parts.append("CRITICAL REQUIREMENT: Apply the following outfit exactly as described. Maintain exact texture, wrinkles, colors, and details.")
-        else:
-            parts.append("Apply the following outfit, allowing natural lighting integration.")
+        parts.append("Apply the following outfit as described.")
     
     # Text description
     if outfit.get("text_description"):
         parts.append(f"Outfit: {outfit['text_description']}.")
-    
-    # Garments to preserve
-    garments = outfit.get("garments_to_preserve", [])
-    if garments:
-        parts.append(f"Specifically preserve these garments: {', '.join(garments)}.")
     
     return parts
 
@@ -119,8 +97,6 @@ def build_jewelry_prompt(jewelry: Dict[str, Any], image_mapping: Dict[str, str] 
         elif method == "text_and_image" and neck.get("text"):
             neck_ref = image_mapping.get("jewelry_neck", "the neck jewelry reference image")
             jewelry_items.append(f"neck: {neck['text']} (see {neck_ref})")
-        elif method == "none":
-            jewelry_items.append("neck: no jewelry")
     
     # Ear jewelry
     ears = jewelry.get("ears", {})
@@ -134,8 +110,6 @@ def build_jewelry_prompt(jewelry: Dict[str, Any], image_mapping: Dict[str, str] 
         elif method == "text_and_image" and ears.get("text"):
             ears_ref = image_mapping.get("jewelry_ears", "the ear jewelry reference image")
             jewelry_items.append(f"ears: {ears['text']} (see {ears_ref})")
-        elif method == "none":
-            jewelry_items.append("ears: no jewelry")
     
     # Hands/wrists jewelry
     hands = jewelry.get("hands_wrists", {})
@@ -149,8 +123,6 @@ def build_jewelry_prompt(jewelry: Dict[str, Any], image_mapping: Dict[str, str] 
         elif method == "text_and_image" and hands.get("text"):
             hands_ref = image_mapping.get("jewelry_hands", "the hand/wrist jewelry reference image")
             jewelry_items.append(f"hands/wrists: {hands['text']} (see {hands_ref})")
-        elif method == "none":
-            jewelry_items.append("hands/wrists: no accessories")
     
     if jewelry_items:
         parts.append(f"Jewelry and accessories: {', '.join(jewelry_items)}.")
@@ -205,6 +177,16 @@ def build_photography_prompt(photography: Dict[str, Any], image_mapping: Dict[st
     
     if photo_settings:
         parts.append(f"Photography style: {', '.join(photo_settings)}.")
+    
+    # Shadows
+    shadows = photography.get("shadows", "").strip()
+    if shadows and shadows != "None - No specific shadow requirements":
+        # If it's a dropdown option, clean it up
+        if shadows.startswith("None - "):
+            shadow_desc = shadows.replace("None - ", "")
+        else:
+            shadow_desc = shadows
+        parts.append(f"Shadows: {shadow_desc}.")
     
     # Pose
     pose = photography.get("pose", {})

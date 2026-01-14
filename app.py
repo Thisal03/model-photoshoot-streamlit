@@ -49,7 +49,7 @@ st.markdown("""
         display: flex;
         justify-content: space-between;
         gap: 4px;
-        background-color: #f0f2f6;
+        background-color: #1e1e1e;
         padding: 6px;
         border-radius: 8px;
         margin-top: 0.25rem;
@@ -122,16 +122,23 @@ st.markdown("""
         color: #e94560;
     }
     
-    /* Generate button styling - minimal padding */
-    .generate-section {
+    /* Sticky footer for JSON preview and generate button */
+    div[data-testid="stVerticalBlock"]:has(button[key="generate_button"]) {
         position: sticky;
         bottom: 0;
         background: white;
-        padding: 0.5rem;
+        padding: 1rem;
         border-top: 2px solid #e0e0e0;
-        margin-top: 0.5rem;
-        margin-bottom: 0rem;
         box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+        z-index: 100;
+        margin-top: 2rem;
+    }
+    
+    /* Dark mode for sticky footer */
+    [data-theme="dark"] div[data-testid="stVerticalBlock"]:has(button[key="generate_button"]),
+    .stApp[data-theme="dark"] div[data-testid="stVerticalBlock"]:has(button[key="generate_button"]) {
+        background-color: #0e1117;
+        border-top-color: #333;
     }
     
     /* Remove bottom spacing from last elements */
@@ -358,9 +365,7 @@ def build_config():
             "text_description": st.session_state.get("model_ref_text", ""),
             "image_url": st.session_state.get("model_ref_url", ""),
             "face_action": "keep" if st.session_state.get("model_action") == "Keep from reference" else "generate",
-            "ethnicity": st.session_state.get("model_ethnicity", ""),
-            "hair_color": st.session_state.get("model_hair_color", ""),
-            "age": st.session_state.get("model_age", "")
+            "new_model_description": st.session_state.get("model_new_description", "")
         },
         "base_outfit": {
             "method": determine_method(
@@ -369,14 +374,12 @@ def build_config():
                 "text_description"
             ),
             "text_description": st.session_state.get("outfit_text", ""),
-            "image_url": st.session_state.get("outfit_url", ""),
-            "preservation_level": "strict" if "Strict" in st.session_state.get("outfit_preservation", "Strict") else "relaxed",
-            "garments_to_preserve": st.session_state.get("selected_garments", [])
+            "image_url": st.session_state.get("outfit_url", "")
             },
         "additional_items": st.session_state.get("additional_items", []),
         "jewelry": {
             "neck": {
-                "enabled": st.session_state.get("jewelry_neck_enabled", False),
+                "enabled": bool(st.session_state.get("jewelry_neck_text", "") or st.session_state.get("jewelry_neck_url", "")),
                 "method": determine_method(
                     st.session_state.get("jewelry_neck_text", ""),
                     st.session_state.get("jewelry_neck_url", ""),
@@ -386,7 +389,7 @@ def build_config():
                 "image_url": st.session_state.get("jewelry_neck_url", "")
             },
             "ears": {
-                "enabled": st.session_state.get("jewelry_ears_enabled", False),
+                "enabled": bool(st.session_state.get("jewelry_ears_text", "") or st.session_state.get("jewelry_ears_url", "")),
                 "method": determine_method(
                     st.session_state.get("jewelry_ears_text", ""),
                     st.session_state.get("jewelry_ears_url", ""),
@@ -396,7 +399,7 @@ def build_config():
                 "image_url": st.session_state.get("jewelry_ears_url", "")
             },
             "hands_wrists": {
-                "enabled": st.session_state.get("jewelry_hands_enabled", False),
+                "enabled": bool(st.session_state.get("jewelry_hands_text", "") or st.session_state.get("jewelry_hands_url", "")),
                 "method": determine_method(
                     st.session_state.get("jewelry_hands_text", ""),
                     st.session_state.get("jewelry_hands_url", ""),
@@ -420,6 +423,7 @@ def build_config():
             "aesthetic": st.session_state.get("photo_aesthetic", "Commercial").lower(),
             "framing": framing_map.get(st.session_state.get("photo_framing", "3/4 Body"), "3/4_body"),
             "lighting": lighting_map.get(st.session_state.get("photo_lighting", "Soft Warm"), "soft_warm"),
+            "shadows": st.session_state.get("shadow_option") if st.session_state.get("shadow_method") == "Select from options" else st.session_state.get("shadow_text", ""),
             "pose": {
                 "method": determine_method(
                     st.session_state.get("pose_text", ""),
@@ -483,36 +487,20 @@ with tab1:
             )
         
         if model_action == "Generate new":
-            with col2:
-                st.text_input("Ethnicity (optional)", key="model_ethnicity")
-            col3, col4 = st.columns(2)
-            with col3:
-                st.text_input("Hair Color (optional)", key="model_hair_color")
-            with col4:
-                st.text_input("Age Range (optional)", key="model_age")
+            st.text_area(
+                "Model Description",
+                key="model_new_description",
+                height=100,
+                placeholder="Describe the model's appearance (e.g., ethnicity, hair color, age, facial features, etc.)"
+            )
 
 # Outfit Tab
 with tab2:
     st.markdown("### Base Outfit")
-    st.caption("Define the main clothing items to be preserved in the photoshoot")
+    st.caption("Define the main clothing items for the photoshoot")
     
     with st.container():
-        outfit_data = render_input_section("outfit", "Outfit", show_preservation=True)
-        
-        st.divider()
-        
-        # Garment selection
-        st.markdown("##### Garments to Preserve")
-        garment_cols = st.columns(4)
-        garments = ["top", "pants", "dress", "shirt", "jacket", "skirt", "shoes", "coat"]
-        selected_garments = []
-        
-        for i, garment in enumerate(garments):
-            with garment_cols[i % 4]:
-                if st.checkbox(garment.capitalize(), key=f"garment_{garment}"):
-                    selected_garments.append(garment)
-        
-        st.session_state['selected_garments'] = selected_garments
+        outfit_data = render_input_section("outfit", "Outfit", show_preservation=False)
 
 # Accessories Tab
 with tab3:
@@ -588,27 +576,20 @@ with tab4:
     
     for location_name, location_key, description in jewelry_locations:
         with st.expander(f"{location_name} - {description}", expanded=False):
-            enable_key = f"{location_key}_enabled"
+            # Show all input options - if user adds input, it will be used
+            st.text_input(
+                f"{location_name} Description (Optional)",
+                key=f"{location_key}_text",
+                placeholder=f"e.g., Gold chain necklace with pendant"
+            )
             
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                enabled = st.checkbox("Enable", key=enable_key, value=False)
-            
-            if enabled:
-                # Show all input options
-                st.text_input(
-                    f"{location_name} Description (Optional)",
-                    key=f"{location_key}_text",
-                    placeholder=f"e.g., Gold chain necklace with pendant"
-                )
-                
-                jewelry_file = st.file_uploader(
-                    f"Upload {location_name} Reference (Optional)",
-                    type=['jpg', 'jpeg', 'png'],
-                    key=f"{location_key}_file"
-                )
-                if jewelry_file:
-                    handle_image_upload(jewelry_file, location_key, location_key)
+            jewelry_file = st.file_uploader(
+                f"Upload {location_name} Reference (Optional)",
+                type=['jpg', 'jpeg', 'png'],
+                key=f"{location_key}_file"
+            )
+            if jewelry_file:
+                handle_image_upload(jewelry_file, location_key, location_key)
 
 # Environment Tab
 with tab5:
@@ -677,6 +658,38 @@ with tab6:
             )
         
         st.divider()
+        
+        # Shadow settings
+        st.markdown("##### Shadows")
+        shadow_method = st.radio(
+            "Shadow Input Method",
+            ["Select from options", "Text description"],
+            key="shadow_method",
+            horizontal=True
+        )
+        
+        shadow_value = ""
+        if shadow_method == "Select from options":
+            shadow_value = st.selectbox(
+                "Shadow Style",
+                [
+                    "None - No specific shadow requirements",
+                    "Blend model shadows with background shadows",
+                    "Natural soft shadows",
+                    "Dramatic hard shadows",
+                    "Minimal shadows for clean look",
+                    "Realistic ground shadows",
+                    "Subtle ambient shadows"
+                ],
+                key="shadow_option"
+            )
+        else:
+            shadow_value = st.text_area(
+                "Shadow Description",
+                key="shadow_text",
+                height=80,
+                placeholder="e.g., Soft natural shadows that blend seamlessly with the background lighting..."
+            )
         
         # Pose settings
         st.markdown("##### Pose")
@@ -756,24 +769,27 @@ with tab7:
         )
         
         st.divider()
-        
+
+# Generate Section - Fixed at bottom (visible across all tabs)
+st.markdown("---")
+with st.container():
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
         # Configuration preview
-        with st.expander("Full Configuration Preview (JSON)"):
+        st.markdown("##### Configuration Preview")
+        with st.expander("Full Configuration Preview (JSON)", expanded=False):
             config = build_config()
             st.json(config)
 
-# Generate Section - Fixed at bottom
-st.divider()
-st.markdown("### Ready to Generate?")
-
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
-    generate_clicked = st.button(
-        "Generate Photoshoot",
-        type="primary",
-        use_container_width=True,
-        key="generate_button"
-    )
+    with col2:
+        st.markdown("##### Ready to Generate?")
+        generate_clicked = st.button(
+            "Generate Photoshoot",
+            type="primary",
+            use_container_width=True,
+            key="generate_button"
+        )
 
 # Handle generation
 if generate_clicked:
