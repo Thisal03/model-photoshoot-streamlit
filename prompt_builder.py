@@ -24,14 +24,18 @@ def build_model_reference_prompt(model_ref: Dict[str, Any], image_mapping: Dict[
     face_action = model_ref.get("face_action", "keep")
     if face_action == "keep":
         if model_ref.get("image_url") and "model_ref" in image_mapping:
-            parts.append(f"Keep the model's face from {image_mapping['model_ref']} exactly as shown.")
+            parts.append(f"CRITICAL: Extract and use the EXACT same face from {image_mapping['model_ref']}. The face features (eyes, nose, mouth, facial structure, skin tone, facial proportions) must match exactly. Also extract the body figure and proportions from {image_mapping['model_ref']}. IGNORE the background, clothing, outfit, accessories, and any other elements from the model reference image.")
         else:
-            parts.append("Keep the model's face from the model reference image exactly as shown.")
+            parts.append("CRITICAL: Extract and use the EXACT same face from the model reference image. The face features must match exactly. Also extract the body figure and proportions. IGNORE the background, clothing, outfit, accessories, and any other elements.")
     elif face_action == "generate":
         if model_ref.get("new_model_description"):
             parts.append(f"Generate a new model with the following characteristics: {model_ref['new_model_description']}.")
         else:
             parts.append("Generate a new model face.")
+    
+    # Always add instruction to use only model face and figure from model reference
+    if model_ref.get("image_url") and face_action == "keep":
+        parts.append("IMPORTANT: The model reference image should ONLY be used to extract the face and body figure. Do not use any other elements from that image.")
     
     return parts
 
@@ -44,7 +48,7 @@ def build_outfit_prompt(outfit: Dict[str, Any], image_mapping: Dict[str, str] = 
     # Clothing instruction - IMPORTANT: Outfit image REPLACES model's clothing
     if outfit.get("image_url"):
         outfit_ref = image_mapping.get("outfit", "the outfit reference image")
-        parts.append(f"CRITICAL REQUIREMENT: REPLACE the model's clothing with the outfit from {outfit_ref}. Maintain the clothing design, texture, and details from {outfit_ref}.")
+        parts.append(f"CRITICAL REQUIREMENT: Extract ONLY the clothing/outfit from {outfit_ref}. IGNORE any person, model, face, body, or background in {outfit_ref}. If there is a person wearing the outfit in {outfit_ref}, extract ONLY the clothing items (shirt, dress, pants, jacket, etc.) and completely ignore the person. REPLACE the model's clothing with ONLY the extracted outfit from {outfit_ref}. Maintain the clothing design, texture, color, and details from the extracted outfit.")
     elif outfit.get("text_description"):
         parts.append("Apply the following outfit as described.")
     
@@ -71,10 +75,10 @@ def build_additional_items_prompt(items: List[Dict[str, Any]], image_mapping: Di
             item_descriptions.append(f"{item_type}: {item['text']}")
         elif item.get("image_url"):
             item_ref = image_mapping.get(f"item_{idx}", f"the {item_type} reference image")
-            item_descriptions.append(f"{item_type}: use {item_ref}")
+            item_descriptions.append(f"{item_type}: extract ONLY the {item_type} from {item_ref}, ignore any person/background/other elements")
     
     if item_descriptions:
-        parts.append(f"Additional clothing items: {'; '.join(item_descriptions)}.")
+        parts.append(f"Additional items: {'; '.join(item_descriptions)}.")
     
     return parts
 
@@ -93,10 +97,10 @@ def build_jewelry_prompt(jewelry: Dict[str, Any], image_mapping: Dict[str, str] 
             jewelry_items.append(f"neck: {neck['text']}")
         elif method == "image_reference":
             neck_ref = image_mapping.get("jewelry_neck", "the neck jewelry reference image")
-            jewelry_items.append(f"neck: use {neck_ref} (apply to neck area)")
+            jewelry_items.append(f"neck: extract ONLY the jewelry from {neck_ref}, ignore any person/background/other elements, apply to neck area")
         elif method == "text_and_image" and neck.get("text"):
             neck_ref = image_mapping.get("jewelry_neck", "the neck jewelry reference image")
-            jewelry_items.append(f"neck: {neck['text']} (see {neck_ref})")
+            jewelry_items.append(f"neck: {neck['text']} (extract jewelry from {neck_ref}, ignore person/background)")
     
     # Ear jewelry
     ears = jewelry.get("ears", {})
@@ -106,10 +110,10 @@ def build_jewelry_prompt(jewelry: Dict[str, Any], image_mapping: Dict[str, str] 
             jewelry_items.append(f"ears: {ears['text']}")
         elif method == "image_reference":
             ears_ref = image_mapping.get("jewelry_ears", "the ear jewelry reference image")
-            jewelry_items.append(f"ears: use {ears_ref} (apply to ears)")
+            jewelry_items.append(f"ears: extract ONLY the jewelry from {ears_ref}, ignore any person/background/other elements, apply to ears")
         elif method == "text_and_image" and ears.get("text"):
             ears_ref = image_mapping.get("jewelry_ears", "the ear jewelry reference image")
-            jewelry_items.append(f"ears: {ears['text']} (see {ears_ref})")
+            jewelry_items.append(f"ears: {ears['text']} (extract jewelry from {ears_ref}, ignore person/background)")
     
     # Hands/wrists jewelry
     hands = jewelry.get("hands_wrists", {})
@@ -119,10 +123,10 @@ def build_jewelry_prompt(jewelry: Dict[str, Any], image_mapping: Dict[str, str] 
             jewelry_items.append(f"hands/wrists: {hands['text']}")
         elif method == "image_reference":
             hands_ref = image_mapping.get("jewelry_hands", "the hand/wrist jewelry reference image")
-            jewelry_items.append(f"hands/wrists: use {hands_ref} (apply to hands and wrists)")
+            jewelry_items.append(f"hands/wrists: extract ONLY the jewelry from {hands_ref}, ignore any person/background/other elements, apply to hands and wrists")
         elif method == "text_and_image" and hands.get("text"):
             hands_ref = image_mapping.get("jewelry_hands", "the hand/wrist jewelry reference image")
-            jewelry_items.append(f"hands/wrists: {hands['text']} (see {hands_ref})")
+            jewelry_items.append(f"hands/wrists: {hands['text']} (extract jewelry from {hands_ref}, ignore person/background)")
     
     if jewelry_items:
         parts.append(f"Jewelry and accessories: {', '.join(jewelry_items)}.")
@@ -151,7 +155,7 @@ def build_environment_prompt(environment: Dict[str, Any], image_mapping: Dict[st
         parts.append(f"Background details: {environment['text_description']}.")
     elif method == "reference_image" and environment.get("image_url"):
         env_ref = image_mapping.get("environment", "the background/environment reference image")
-        parts.append(f"Use the background from {env_ref}.")
+        parts.append(f"CRITICAL: Extract ONLY the background/environment/scene from {env_ref}. IGNORE any person, model, face, body, clothing, or foreground elements. Use ONLY the background, environment setting, and scene from {env_ref}.")
     
     return parts
 
@@ -197,7 +201,7 @@ def build_photography_prompt(photography: Dict[str, Any], image_mapping: Dict[st
     elif pose_method == "reference_image" and pose.get("image_url"):
         strength = pose.get("strength", 0.8)
         pose_ref = image_mapping.get("pose", "the pose reference image")
-        parts.append(f"Use the pose from {pose_ref} with {int(strength * 100)}% similarity.")
+        parts.append(f"CRITICAL: Extract ONLY the body pose, positioning, and stance from {pose_ref}. IGNORE the face, clothing, outfit, background, and other elements. Use ONLY the body positioning and pose from {pose_ref} with {int(strength * 100)}% similarity.")
     
     # Hair
     hair = photography.get("hair", {})
@@ -207,7 +211,7 @@ def build_photography_prompt(photography: Dict[str, Any], image_mapping: Dict[st
         parts.append(f"Hair styling: {hair['text']}.")
     elif hair_method == "reference_image" and hair.get("image_url"):
         hair_ref = image_mapping.get("hair", "the hairstyle reference image")
-        parts.append(f"Use the hairstyle from {hair_ref}.")
+        parts.append(f"CRITICAL: Extract ONLY the hairstyle, hair texture, and hair styling from {hair_ref}. IGNORE the face features, body, clothing, background, and other elements. Use ONLY the hairstyle and hair appearance from {hair_ref}.")
     elif hair_method == "keep_original":
         parts.append("Keep the original hairstyle from the reference.")
     
@@ -234,6 +238,11 @@ def build_photoshoot_prompt(config: Dict[str, Any], image_mapping: Dict[str, str
     """
     parts = []
     image_mapping = image_mapping or {}
+    
+    # Check if batch generation (multiple outputs)
+    output_count = config.get("output", {}).get("count", 1)
+    if output_count > 1:
+        parts.append("CRITICAL CONSISTENCY REQUIREMENT: When generating multiple images, the model's face, body figure, outfit, all clothing items, jewelry, and accessories must remain EXACTLY THE SAME across all generated images. Only camera angles, poses, lighting variations, and composition can differ between images. All core elements must be identical.")
     
     # Model reference
     if config.get("model_reference"):

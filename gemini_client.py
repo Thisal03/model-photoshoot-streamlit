@@ -40,14 +40,18 @@ class GeminiPhotoshootClient:
         # Model reference image
         model_ref = config.get("model_reference", {})
         if model_ref.get("image_url"):
-            parts.append({"text": "REFERENCE IMAGE 1 - MODEL: This image shows the model reference. Use the model's face and appearance from this image."})
+            face_action = model_ref.get("face_action", "keep")
+            if face_action == "keep":
+                parts.append({"text": "REFERENCE IMAGE 1 - MODEL: This image shows the model reference. CRITICAL: Extract ONLY the model's face and body figure from this image. IGNORE the background, clothing, outfit, accessories, jewelry, and any other elements. Use ONLY the face features (eyes, nose, mouth, facial structure, skin tone) and body proportions/figure. The exact same face must be used in the generated image."})
+            else:
+                parts.append({"text": "REFERENCE IMAGE 1 - MODEL: This image shows the model reference. CRITICAL: Extract ONLY the model's body figure and proportions from this image. IGNORE the face, background, clothing, outfit, accessories, jewelry, and any other elements. Use ONLY the body proportions and figure structure."})
             self._add_image_part(parts, model_ref["image_url"])
             image_mapping["model_ref"] = "the model reference image (Image 1)"
         
         # Base outfit image - IMPORTANT: This replaces the model's outfit
         outfit = config.get("base_outfit", {})
         if outfit.get("image_url"):
-            parts.append({"text": "REFERENCE IMAGE - OUTFIT: This image shows the outfit/clothing to be worn. REPLACE the model's clothing with the outfit from this image."})
+            parts.append({"text": "REFERENCE IMAGE - OUTFIT: This image shows the outfit/clothing to be worn. CRITICAL: Extract ONLY the clothing/outfit from this image. IGNORE any person, model, face, body, background, or other elements in this image. If there is a person wearing the outfit, extract ONLY the clothing items (shirt, dress, pants, etc.) and ignore the person completely. REPLACE the model's clothing with ONLY the outfit extracted from this image."})
             self._add_image_part(parts, outfit["image_url"])
             image_mapping["outfit"] = "the outfit image (which replaces the model's clothing)"
         
@@ -58,7 +62,7 @@ class GeminiPhotoshootClient:
             if item.get("image_url"):
                 item_type = item.get("type", "item")
                 item_counter += 1
-                parts.append({"text": f"REFERENCE IMAGE - ADDITIONAL ITEM ({item_type.upper()}): This image shows a {item_type} to add to the outfit."})
+                parts.append({"text": f"REFERENCE IMAGE - ADDITIONAL ITEM ({item_type.upper()}): This image shows a {item_type} to add to the outfit. CRITICAL: Extract ONLY the {item_type} from this image. IGNORE any person, model, face, body, background, or other elements. If there is a person wearing or holding the {item_type}, extract ONLY the {item_type} itself and ignore the person completely."})
                 self._add_image_part(parts, item["image_url"])
                 image_mapping[f"item_{idx}"] = f"the {item_type} reference image"
         
@@ -68,28 +72,28 @@ class GeminiPhotoshootClient:
         # Neck jewelry
         neck = jewelry.get("neck", {})
         if neck.get("enabled") and neck.get("image_url"):
-            parts.append({"text": "REFERENCE IMAGE - NECK JEWELRY: This image shows the necklace/jewelry to wear around the neck. Apply this jewelry to the neck area."})
+            parts.append({"text": "REFERENCE IMAGE - NECK JEWELRY: This image shows the necklace/jewelry to wear around the neck. CRITICAL: Extract ONLY the necklace/jewelry from this image. IGNORE any person, model, face, body, background, or other elements. If there is a person wearing the jewelry, extract ONLY the jewelry item itself and ignore the person completely. Apply ONLY the extracted jewelry to the neck area."})
             self._add_image_part(parts, neck["image_url"])
             image_mapping["jewelry_neck"] = "the neck jewelry reference image"
         
         # Ear jewelry
         ears = jewelry.get("ears", {})
         if ears.get("enabled") and ears.get("image_url"):
-            parts.append({"text": "REFERENCE IMAGE - EAR JEWELRY: This image shows the earrings/jewelry to wear on the ears. Apply this jewelry to the ears."})
+            parts.append({"text": "REFERENCE IMAGE - EAR JEWELRY: This image shows the earrings/jewelry to wear on the ears. CRITICAL: Extract ONLY the earrings/jewelry from this image. IGNORE any person, model, face, body, background, or other elements. If there is a person wearing the jewelry, extract ONLY the jewelry item itself and ignore the person completely. Apply ONLY the extracted jewelry to the ears."})
             self._add_image_part(parts, ears["image_url"])
             image_mapping["jewelry_ears"] = "the ear jewelry reference image"
         
         # Hands/wrists jewelry
         hands = jewelry.get("hands_wrists", {})
         if hands.get("enabled") and hands.get("image_url"):
-            parts.append({"text": "REFERENCE IMAGE - HAND/WRIST JEWELRY: This image shows the rings/bracelets to wear on hands and wrists. Apply this jewelry to the hands and wrists."})
+            parts.append({"text": "REFERENCE IMAGE - HAND/WRIST JEWELRY: This image shows the rings/bracelets to wear on hands and wrists. CRITICAL: Extract ONLY the rings/bracelets/jewelry from this image. IGNORE any person, model, face, body, background, or other elements. If there is a person wearing the jewelry, extract ONLY the jewelry item itself and ignore the person completely. Apply ONLY the extracted jewelry to the hands and wrists."})
             self._add_image_part(parts, hands["image_url"])
             image_mapping["jewelry_hands"] = "the hand/wrist jewelry reference image"
         
         # Environment/background image
         environment = config.get("environment", {})
         if environment.get("image_url"):
-            parts.append({"text": "REFERENCE IMAGE - BACKGROUND: This image shows the background/environment to use for the photoshoot."})
+            parts.append({"text": "REFERENCE IMAGE - BACKGROUND: This image shows the background/environment to use for the photoshoot. CRITICAL: Extract ONLY the background/environment/scene from this image. IGNORE any person, model, face, body, clothing, or other foreground elements. Use ONLY the background, environment, and scene setting from this image."})
             self._add_image_part(parts, environment["image_url"])
             image_mapping["environment"] = "the background/environment reference image"
         
@@ -99,14 +103,14 @@ class GeminiPhotoshootClient:
         # Pose reference image
         pose = photography.get("pose", {})
         if pose.get("image_url"):
-            parts.append({"text": "REFERENCE IMAGE - POSE: This image shows the pose to mimic. Use the pose and body positioning from this image."})
+            parts.append({"text": "REFERENCE IMAGE - POSE: This image shows the pose to mimic. CRITICAL: Extract ONLY the body pose, positioning, and stance from this image. IGNORE the face, clothing, outfit, background, and other elements. Use ONLY the body positioning, pose, and stance from this image."})
             self._add_image_part(parts, pose["image_url"])
             image_mapping["pose"] = "the pose reference image"
         
         # Hair reference image
         hair = photography.get("hair", {})
         if hair.get("image_url"):
-            parts.append({"text": "REFERENCE IMAGE - HAIRSTYLE: This image shows the hairstyle to apply. Use the hairstyle from this image."})
+            parts.append({"text": "REFERENCE IMAGE - HAIRSTYLE: This image shows the hairstyle to apply. CRITICAL: Extract ONLY the hairstyle, hair texture, and hair styling from this image. IGNORE the face features, body, clothing, background, and other elements. Use ONLY the hairstyle and hair appearance from this image."})
             self._add_image_part(parts, hair["image_url"])
             image_mapping["hair"] = "the hairstyle reference image"
         
@@ -175,6 +179,9 @@ class GeminiPhotoshootClient:
         """
         
         # Add variation for batch generation
+        # CRITICAL: Model face, figure, outfit, and all items must remain EXACTLY THE SAME across all batch outputs
+        consistency_note = "CRITICAL: Keep the model's face, body figure, outfit, and all items EXACTLY THE SAME as specified. Only vary camera angle, pose positioning, lighting, and composition."
+        
         final_prompt = prompt
         if batch_index is not None and batch_variety == "dynamic_angles":
             variations = [
@@ -190,7 +197,7 @@ class GeminiPhotoshootClient:
                 "Different positioning"
             ]
             variation_text = variations[batch_index % len(variations)]
-            final_prompt = f"{variation_text}. {prompt}"
+            final_prompt = f"{consistency_note} {variation_text}. {prompt}"
         elif batch_index is not None and batch_variety == "subtle_variations":
             # Subtle variations - minor changes
             variations = [
@@ -201,7 +208,10 @@ class GeminiPhotoshootClient:
                 "Gentle variation"
             ]
             variation_text = variations[batch_index % len(variations)]
-            final_prompt = f"{variation_text}. {prompt}"
+            final_prompt = f"{consistency_note} {variation_text}. {prompt}"
+        elif batch_index is not None:
+            # If batch_index is provided but no variety specified, still add consistency note
+            final_prompt = f"{consistency_note} {prompt}"
         
         # Build request parts: text prompt first, then interleaved text+image parts
         parts = [{"text": final_prompt}] + image_parts

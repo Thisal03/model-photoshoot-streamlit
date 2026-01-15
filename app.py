@@ -457,13 +457,11 @@ st.title("Photoshoot Generator")
 st.caption("AI-Powered Fashion Photography")
 
 # Create tabs
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     get_tab_label("Model", "model_ref", True),
     get_tab_label("Outfit", "outfit", True),
-    get_tab_label("Accessories", "accessories", False),
-    get_tab_label("Jewelry", "jewelry", False),
-    get_tab_label("Environment", "environment", False),
-    get_tab_label("Photography", "photo", True),
+    get_tab_label("Accessories & Jewelry", "accessories", False),
+    get_tab_label("Environment & Photography", "environment", True),
     get_tab_label("Output", "output", True)
 ])
 
@@ -493,6 +491,23 @@ with tab1:
                 height=100,
                 placeholder="Describe the model's appearance (e.g., ethnicity, hair color, age, facial features, etc.)"
             )
+        
+        # Hair styling (moved from Photography tab)
+        st.divider()
+        st.markdown("##### Hair Styling")
+        st.text_input(
+            "Hair Description (Optional)",
+            key="hair_text",
+            placeholder="e.g., Sleek bun, loose waves"
+        )
+        
+        hair_file = st.file_uploader(
+            "Upload Hair Reference (Optional)",
+            type=['jpg', 'jpeg', 'png'],
+            key="hair_file"
+        )
+        if hair_file:
+            handle_image_upload(hair_file, "hair", "hair")
 
 # Outfit Tab
 with tab2:
@@ -502,15 +517,19 @@ with tab2:
     with st.container():
         outfit_data = render_input_section("outfit", "Outfit", show_preservation=False)
 
-# Accessories Tab
+# Accessories & Jewelry Tab (Combined)
 with tab3:
-    st.markdown("### Additional Items")
-    st.caption("Add optional layers like jackets, shoes, bags, etc.")
+    st.markdown("### Accessories & Jewelry")
+    st.caption("Add accessories and configure jewelry for each body location")
+    
+    # Additional Items Section
+    st.markdown("##### Additional Items")
+    st.caption("Add optional accessories like bags, hats, scarves, sunglasses, etc.")
     
     with st.container():
         # Display existing items
         if st.session_state.additional_items:
-            st.markdown("##### Added Items")
+            st.markdown("**Added Items**")
             for i, item in enumerate(st.session_state.additional_items):
                 col1, col2, col3 = st.columns([2, 2, 1])
                 with col1:
@@ -525,13 +544,13 @@ with tab3:
         st.divider()
         
         # Add new item
-        st.markdown("##### Add New Item")
+        st.markdown("**Add New Item**")
         col1, col2 = st.columns([1, 2])
         
         with col1:
             item_type = st.selectbox(
                 "Item Type",
-                ["Jacket", "Shoes", "Bag", "Hat", "Scarf", "Belt", "Sunglasses", "Watch", "Other"],
+                ["Bag", "Hat", "Scarf", "Sunglasses", "Other"],
                 key="new_item_type"
             )
         
@@ -562,10 +581,11 @@ with tab3:
             st.session_state.additional_items.append(new_item)
             st.success(f"Added {item_type}")
             st.rerun()
-
-# Jewelry Tab
-with tab4:
-    st.markdown("### Jewelry & Accessories")
+    
+    st.divider()
+    
+    # Jewelry Section
+    st.markdown("##### Jewelry")
     st.caption("Configure jewelry for each body location")
     
     jewelry_locations = [
@@ -591,10 +611,13 @@ with tab4:
             if jewelry_file:
                 handle_image_upload(jewelry_file, location_key, location_key)
 
-# Environment Tab
-with tab5:
-    st.markdown("### Environment & Background")
-    st.caption("Set the scene for your photoshoot")
+# Environment & Photography Tab (Combined)
+with tab4:
+    st.markdown("### Environment & Photography")
+    st.caption("Set the scene and configure visual style and camera settings")
+    
+    # Environment Section
+    st.markdown("##### Environment & Background")
     
     with st.container():
         col1, col2 = st.columns(2)
@@ -621,17 +644,17 @@ with tab5:
         )
         if bg_file:
             handle_image_upload(bg_file, "background", "environment")
-
-# Photography Tab
-with tab6:
-    st.markdown("### Photography Settings")
-    st.caption("Configure the visual style and camera settings")
+    
+    st.divider()
+    
+    # Photography Section
+    st.markdown("##### Photography Settings")
     
     with st.container():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.markdown("##### Aesthetic")
+            st.markdown("**Aesthetic**")
             aesthetic = st.selectbox(
                 "Style",
                 ["Editorial", "Commercial", "Lifestyle", "High Fashion", "Casual"],
@@ -640,7 +663,7 @@ with tab6:
             )
         
         with col2:
-            st.markdown("##### Framing")
+            st.markdown("**Framing**")
             framing = st.selectbox(
                 "Frame",
                 ["Full Body", "3/4 Body", "Waist Up", "Close Up"],
@@ -649,7 +672,7 @@ with tab6:
             )
         
         with col3:
-            st.markdown("##### Lighting")
+            st.markdown("**Lighting**")
             lighting = st.selectbox(
                 "Light",
                 ["Soft Warm", "Studio Clean", "Golden Hour", "Hard Shadows", "Natural"],
@@ -660,7 +683,7 @@ with tab6:
         st.divider()
         
         # Shadow settings
-        st.markdown("##### Shadows")
+        st.markdown("**Shadows**")
         shadow_method = st.radio(
             "Shadow Input Method",
             ["Select from options", "Text description"],
@@ -692,7 +715,7 @@ with tab6:
             )
         
         # Pose settings
-        st.markdown("##### Pose")
+        st.markdown("**Pose**")
         st.text_input(
             "Pose Description (Optional)",
             key="pose_text",
@@ -710,27 +733,9 @@ with tab6:
                 handle_image_upload(pose_file, "pose", "pose")
         with col2:
             st.slider("Mimicry Strength", 0.0, 1.0, 0.8, key="pose_strength")
-        
-        st.divider()
-        
-        # Hair styling
-        st.markdown("##### Hair Styling")
-        st.text_input(
-            "Hair Description (Optional)",
-            key="hair_text",
-            placeholder="e.g., Sleek bun, loose waves"
-        )
-        
-        hair_file = st.file_uploader(
-            "Upload Hair Reference (Optional)",
-            type=['jpg', 'jpeg', 'png'],
-            key="hair_file"
-        )
-        if hair_file:
-            handle_image_upload(hair_file, "hair", "hair")
 
 # Output Tab
-with tab7:
+with tab5:
     st.markdown("### Output Settings")
     st.caption("Configure the final output parameters")
     
