@@ -83,50 +83,110 @@ def build_additional_items_prompt(items: List[Dict[str, Any]], image_mapping: Di
     return parts
 
 
-def build_jewelry_prompt(jewelry: Dict[str, Any], image_mapping: Dict[str, str] = None) -> List[str]:
-    """Build prompt parts for jewelry configuration"""
+def build_jewelry_prompt(jewelry: List[Dict[str, Any]], image_mapping: Dict[str, str] = None) -> List[str]:
+    """Build prompt parts for tag-based jewelry configuration
+    
+    Args:
+        jewelry: List of jewelry items, each with 'tags', 'text', and 'image_url'
+        image_mapping: Dictionary mapping image labels to descriptions
+    """
     parts = []
     jewelry_items = []
     image_mapping = image_mapping or {}
     
-    # Neck jewelry
-    neck = jewelry.get("neck", {})
-    if neck.get("enabled"):
-        method = neck.get("method", "none")
-        if method == "text_description" and neck.get("text"):
-            jewelry_items.append(f"neck: {neck['text']}")
-        elif method == "image_reference":
-            neck_ref = image_mapping.get("jewelry_neck", "the neck jewelry reference image")
-            jewelry_items.append(f"neck: extract ONLY the jewelry from {neck_ref}, ignore any person/background/other elements, apply to neck area")
-        elif method == "text_and_image" and neck.get("text"):
-            neck_ref = image_mapping.get("jewelry_neck", "the neck jewelry reference image")
-            jewelry_items.append(f"neck: {neck['text']} (extract jewelry from {neck_ref}, ignore person/background)")
+    if not jewelry:
+        return parts
     
-    # Ear jewelry
-    ears = jewelry.get("ears", {})
-    if ears.get("enabled"):
-        method = ears.get("method", "none")
-        if method == "text_description" and ears.get("text"):
-            jewelry_items.append(f"ears: {ears['text']}")
-        elif method == "image_reference":
-            ears_ref = image_mapping.get("jewelry_ears", "the ear jewelry reference image")
-            jewelry_items.append(f"ears: extract ONLY the jewelry from {ears_ref}, ignore any person/background/other elements, apply to ears")
-        elif method == "text_and_image" and ears.get("text"):
-            ears_ref = image_mapping.get("jewelry_ears", "the ear jewelry reference image")
-            jewelry_items.append(f"ears: {ears['text']} (extract jewelry from {ears_ref}, ignore person/background)")
+    # Map tags to body locations
+    tag_to_location = {
+        "necklace": "neck",
+        "neck": "neck",
+        "chain": "neck",
+        "pendant": "neck",
+        "choker": "neck",
+        "earrings": "ears",
+        "ears": "ears",
+        "ear": "ears",
+        "earring": "ears",
+        "bracelet": "hands/wrists",
+        "bangle": "hands/wrists",
+        "watch": "hands/wrists",
+        "ring": "hands/wrists",
+        "rings": "hands/wrists",
+        "wrist": "hands/wrists",
+        "hands": "hands/wrists",
+        "anklet": "ankle",
+        "ankle": "ankle"
+    }
     
-    # Hands/wrists jewelry
-    hands = jewelry.get("hands_wrists", {})
-    if hands.get("enabled"):
-        method = hands.get("method", "none")
-        if method == "text_description" and hands.get("text"):
-            jewelry_items.append(f"hands/wrists: {hands['text']}")
-        elif method == "image_reference":
-            hands_ref = image_mapping.get("jewelry_hands", "the hand/wrist jewelry reference image")
-            jewelry_items.append(f"hands/wrists: extract ONLY the jewelry from {hands_ref}, ignore any person/background/other elements, apply to hands and wrists")
-        elif method == "text_and_image" and hands.get("text"):
-            hands_ref = image_mapping.get("jewelry_hands", "the hand/wrist jewelry reference image")
-            jewelry_items.append(f"hands/wrists: {hands['text']} (extract jewelry from {hands_ref}, ignore person/background)")
+    # Group jewelry items by location
+    location_items = {}
+    
+    for idx, item in enumerate(jewelry):
+        tags = item.get("tags", [])
+        text = item.get("text", "")
+        image_url = item.get("image_url", "")
+        
+        if not tags and not text and not image_url:
+            continue
+        
+        # Determine locations from tags
+        locations = set()
+        for tag in tags:
+            tag_lower = tag.lower().strip()
+            location = tag_to_location.get(tag_lower)
+            if location:
+                locations.add(location)
+            else:
+                # If tag doesn't map to a known location, use the tag as location
+                locations.add(tag_lower)
+        
+        # If no location found from tags, try to infer from text
+        if not locations and text:
+            text_lower = text.lower()
+            for tag, loc in tag_to_location.items():
+                if tag in text_lower:
+                    locations.add(loc)
+                    break
+        
+        # If still no location, use "general" or the first tag
+        if not locations:
+            if tags:
+                locations.add(tags[0].lower())
+            else:
+                locations.add("general")
+        
+        # Build description for each location
+        for location in locations:
+            if location not in location_items:
+                location_items[location] = []
+            
+            item_desc_parts = []
+            
+            # Add text description if available
+            if text:
+                item_desc_parts.append(text)
+            
+            # Add image reference if available
+            if image_url:
+                image_key = f"jewelry_{idx}"
+                jewelry_ref = image_mapping.get(image_key, f"the jewelry reference image (item {idx + 1})")
+                if text:
+                    item_desc_parts.append(f"extract ONLY the {', '.join(tags) if tags else 'jewelry'} from {jewelry_ref}, ignore any person/background/other elements")
+                else:
+                    item_desc_parts.append(f"extract ONLY the {', '.join(tags) if tags else 'jewelry'} from {jewelry_ref}, ignore any person/background/other elements, apply to {location} area")
+            elif not text:
+                # If no text and no image, use tags as description
+                if tags:
+                    item_desc_parts.append(f"{', '.join(tags)}")
+            
+            item_desc = " - ".join(item_desc_parts) if item_desc_parts else "jewelry item"
+            location_items[location].append(item_desc)
+    
+    # Build final jewelry items list
+    for location, items in location_items.items():
+        if items:
+            jewelry_items.append(f"{location}: {', '.join(items)}")
     
     if jewelry_items:
         parts.append(f"Jewelry and accessories: {', '.join(jewelry_items)}.")

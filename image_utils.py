@@ -28,6 +28,7 @@ IMAGE_TYPES = {
     "watch": "Watch reference",
     
     # Jewelry
+    "jewelry": "Jewelry/accessory reference (tag-based)",
     "jewelry_neck": "Neck jewelry reference",
     "jewelry_ears": "Ear jewelry reference",
     "jewelry_hands": "Hand/wrist jewelry reference",
@@ -93,6 +94,7 @@ class S3ImageHandler:
             "new_item": "item-refs",
             
             # Jewelry
+            "jewelry": "jewelry-refs",
             "jewelry_neck": "jewelry-refs",
             "jewelry_ears": "jewelry-refs",
             "jewelry_hands": "jewelry-refs",

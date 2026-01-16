@@ -66,29 +66,58 @@ class GeminiPhotoshootClient:
                 self._add_image_part(parts, item["image_url"])
                 image_mapping[f"item_{idx}"] = f"the {item_type} reference image"
         
-        # Jewelry images - each with explicit location mapping
-        jewelry = config.get("jewelry", {})
+        # Jewelry images - tag-based system
+        jewelry = config.get("jewelry", [])
         
-        # Neck jewelry
-        neck = jewelry.get("neck", {})
-        if neck.get("enabled") and neck.get("image_url"):
-            parts.append({"text": "REFERENCE IMAGE - NECK JEWELRY: This image shows the necklace/jewelry to wear around the neck. CRITICAL: Extract ONLY the necklace/jewelry from this image. IGNORE any person, model, face, body, background, or other elements. If there is a person wearing the jewelry, extract ONLY the jewelry item itself and ignore the person completely. Apply ONLY the extracted jewelry to the neck area."})
-            self._add_image_part(parts, neck["image_url"])
-            image_mapping["jewelry_neck"] = "the neck jewelry reference image"
+        # Map tags to location descriptions for better prompts
+        tag_location_map = {
+            "necklace": "neck area",
+            "neck": "neck area",
+            "chain": "neck area",
+            "pendant": "neck area",
+            "choker": "neck area",
+            "earrings": "ears",
+            "ears": "ears",
+            "ear": "ears",
+            "earring": "ears",
+            "bracelet": "hands and wrists",
+            "bangle": "hands and wrists",
+            "watch": "hands and wrists",
+            "ring": "hands and wrists",
+            "rings": "hands and wrists",
+            "wrist": "hands and wrists",
+            "hands": "hands and wrists",
+            "anklet": "ankle area",
+            "ankle": "ankle area"
+        }
         
-        # Ear jewelry
-        ears = jewelry.get("ears", {})
-        if ears.get("enabled") and ears.get("image_url"):
-            parts.append({"text": "REFERENCE IMAGE - EAR JEWELRY: This image shows the earrings/jewelry to wear on the ears. CRITICAL: Extract ONLY the earrings/jewelry from this image. IGNORE any person, model, face, body, background, or other elements. If there is a person wearing the jewelry, extract ONLY the jewelry item itself and ignore the person completely. Apply ONLY the extracted jewelry to the ears."})
-            self._add_image_part(parts, ears["image_url"])
-            image_mapping["jewelry_ears"] = "the ear jewelry reference image"
-        
-        # Hands/wrists jewelry
-        hands = jewelry.get("hands_wrists", {})
-        if hands.get("enabled") and hands.get("image_url"):
-            parts.append({"text": "REFERENCE IMAGE - HAND/WRIST JEWELRY: This image shows the rings/bracelets to wear on hands and wrists. CRITICAL: Extract ONLY the rings/bracelets/jewelry from this image. IGNORE any person, model, face, body, background, or other elements. If there is a person wearing the jewelry, extract ONLY the jewelry item itself and ignore the person completely. Apply ONLY the extracted jewelry to the hands and wrists."})
-            self._add_image_part(parts, hands["image_url"])
-            image_mapping["jewelry_hands"] = "the hand/wrist jewelry reference image"
+        for idx, item in enumerate(jewelry):
+            if not item.get("image_url"):
+                continue
+            
+            tags = item.get("tags", [])
+            tags_str = ", ".join(tags) if tags else "jewelry/accessory"
+            
+            # Determine location from tags
+            locations = []
+            for tag in tags:
+                tag_lower = tag.lower().strip()
+                location = tag_location_map.get(tag_lower)
+                if location and location not in locations:
+                    locations.append(location)
+            
+            # If no location found, use tags as location hint
+            if not locations:
+                locations = [tags_str] if tags else ["appropriate body area"]
+            
+            location_desc = ", ".join(locations)
+            
+            # Build descriptive text for the image
+            image_desc = f"REFERENCE IMAGE - JEWELRY/ACCESSORY (Item {idx + 1}): This image shows {tags_str} to wear. CRITICAL: Extract ONLY the {tags_str} from this image. IGNORE any person, model, face, body, background, or other elements. If there is a person wearing the jewelry/accessory, extract ONLY the jewelry/accessory item itself and ignore the person completely. Apply ONLY the extracted {tags_str} to the {location_desc}."
+            
+            parts.append({"text": image_desc})
+            self._add_image_part(parts, item["image_url"])
+            image_mapping[f"jewelry_{idx}"] = f"the jewelry/accessory reference image (item {idx + 1}, tags: {tags_str})"
         
         # Environment/background image
         environment = config.get("environment", {})

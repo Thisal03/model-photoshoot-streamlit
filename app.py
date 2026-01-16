@@ -225,6 +225,9 @@ s3_handler = S3ImageHandler()
 if 'additional_items' not in st.session_state:
     st.session_state.additional_items = []
 
+if 'jewelry_items' not in st.session_state:
+    st.session_state.jewelry_items = []
+
 # Helper function for image upload with S3
 def handle_image_upload(file_obj, image_type, session_key):
     """Handle image upload to S3 and store URL in session state"""
@@ -298,6 +301,15 @@ def get_section_status(section_key):
 
 def get_tab_label(name, section_key, is_required=False):
     """Get tab label with status indicator"""
+    # Special handling for accessories tab (uses jewelry_items list)
+    if section_key == "accessories":
+        has_items = bool(st.session_state.get("jewelry_items", []))
+        if has_items:
+            return f"{name} ✓"
+        elif is_required:
+            return f"{name} *"
+        return name
+    
     status = get_section_status(section_key)
     if status:
         return f"{name} ✓"
@@ -377,38 +389,7 @@ def build_config():
             "image_url": st.session_state.get("outfit_url", "")
             },
         "additional_items": st.session_state.get("additional_items", []),
-        "jewelry": {
-            "neck": {
-                "enabled": bool(st.session_state.get("jewelry_neck_text", "") or st.session_state.get("jewelry_neck_url", "")),
-                "method": determine_method(
-                    st.session_state.get("jewelry_neck_text", ""),
-                    st.session_state.get("jewelry_neck_url", ""),
-                    "none"
-                ),
-                "text": st.session_state.get("jewelry_neck_text", ""),
-                "image_url": st.session_state.get("jewelry_neck_url", "")
-            },
-            "ears": {
-                "enabled": bool(st.session_state.get("jewelry_ears_text", "") or st.session_state.get("jewelry_ears_url", "")),
-                "method": determine_method(
-                    st.session_state.get("jewelry_ears_text", ""),
-                    st.session_state.get("jewelry_ears_url", ""),
-                    "none"
-                ),
-                "text": st.session_state.get("jewelry_ears_text", ""),
-                "image_url": st.session_state.get("jewelry_ears_url", "")
-            },
-            "hands_wrists": {
-                "enabled": bool(st.session_state.get("jewelry_hands_text", "") or st.session_state.get("jewelry_hands_url", "")),
-                "method": determine_method(
-                    st.session_state.get("jewelry_hands_text", ""),
-                    st.session_state.get("jewelry_hands_url", ""),
-                    "none"
-                ),
-                "text": st.session_state.get("jewelry_hands_text", ""),
-                "image_url": st.session_state.get("jewelry_hands_url", "")
-            }
-        },
+        "jewelry": st.session_state.get("jewelry_items", []),
         "environment": {
             "category": st.session_state.get("env_category", "Studio").lower().replace(" ", "_"),
             "method": determine_method(
@@ -584,32 +565,133 @@ with tab3:
     
     st.divider()
     
-    # Jewelry Section
-    st.markdown("##### Jewelry")
-    st.caption("Configure jewelry for each body location")
+    # Jewelry & Accessories Section (Tag-based)
+    st.markdown("##### Jewelry & Accessories")
+    st.caption("Upload images and tag them to specify what should be extracted (e.g., necklace, earrings, bracelet)")
     
-    jewelry_locations = [
-        ("Neck", "jewelry_neck", "Necklaces, chains, pendants"),
-        ("Ears", "jewelry_ears", "Earrings, ear cuffs"),
-        ("Hands/Wrists", "jewelry_hands", "Rings, bracelets, watches")
-    ]
-    
-    for location_name, location_key, description in jewelry_locations:
-        with st.expander(f"{location_name} - {description}", expanded=False):
-            # Show all input options - if user adds input, it will be used
-            st.text_input(
-                f"{location_name} Description (Optional)",
-                key=f"{location_key}_text",
-                placeholder=f"e.g., Gold chain necklace with pendant"
+    with st.container():
+        # Display existing jewelry items
+        if st.session_state.jewelry_items:
+            st.markdown("**Added Jewelry & Accessories**")
+            for i, item in enumerate(st.session_state.jewelry_items):
+                col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+                with col1:
+                    if item.get('image_url'):
+                        st.caption("Image uploaded")
+                    else:
+                        st.caption("Text description")
+                with col2:
+                    tags_display = ", ".join(item.get('tags', []))
+                    st.caption(f"Tags: {tags_display}")
+                with col3:
+                    st.caption(item.get('text', '')[:30] + "..." if item.get('text') else "No description")
+                with col4:
+                    if st.button("Remove", key=f"remove_jewelry_{i}"):
+                        st.session_state.jewelry_items.pop(i)
+                        st.rerun()
+        
+        st.divider()
+        
+        # Add new jewelry/accessory item
+        st.markdown("**Add New Jewelry/Accessory**")
+        
+        # Step 1: Image or Text Description
+        st.markdown("**Step 1: Add Image or Description**")
+        
+        # Initialize form counter if not exists
+        if "jewelry_form_counter" not in st.session_state:
+            st.session_state.jewelry_form_counter = 0
+        
+        # Image upload
+        jewelry_file = st.file_uploader(
+            "Upload Jewelry/Accessory Image (Optional)",
+            type=['jpg', 'jpeg', 'png'],
+            key=f"new_jewelry_file_{st.session_state.jewelry_form_counter}"
+        )
+        if jewelry_file:
+            handle_image_upload(jewelry_file, "jewelry", "new_jewelry")
+        
+        new_jewelry_url = st.session_state.get("new_jewelry_url", "")
+        
+        # Text description
+        jewelry_text = st.text_area(
+            "Description (Optional)",
+            key=f"new_jewelry_text_{st.session_state.jewelry_form_counter}",
+            height=80,
+            placeholder="Describe the jewelry/accessory in detail..."
+        )
+        
+        # Check if user has added image or text
+        has_content = bool(jewelry_text.strip() or new_jewelry_url)
+        
+        if has_content:
+            st.divider()
+            
+            # Step 2: Tag Selection
+            st.markdown("**Step 2: Select Tags**")
+            st.caption("Select tags to identify what should be extracted from the image/description")
+            
+            # Default tags - show side by side as checkboxes
+            default_tags = ["necklace", "earrings", "bracelet", "ring", "watch", "anklet", "choker", "bangle"]
+            
+            # Create columns for tags (4 tags per row)
+            num_cols = 4
+            num_rows = (len(default_tags) + num_cols - 1) // num_cols
+            
+            selected_default_tags = []
+            for row in range(num_rows):
+                cols = st.columns(num_cols)
+                for col_idx in range(num_cols):
+                    tag_idx = row * num_cols + col_idx
+                    if tag_idx < len(default_tags):
+                        tag = default_tags[tag_idx]
+                        with cols[col_idx]:
+                            # Use form counter in key to reset checkboxes when form is cleared
+                            checkbox_key = f"new_jewelry_tag_{tag}_{st.session_state.jewelry_form_counter}"
+                            if st.checkbox(tag.capitalize(), key=checkbox_key):
+                                if tag not in selected_default_tags:
+                                    selected_default_tags.append(tag)
+            
+            # Custom tags input
+            st.markdown("<br>", unsafe_allow_html=True)
+            custom_tags_input = st.text_input(
+                "Custom Tags (comma-separated)",
+                key="new_jewelry_custom_tags",
+                placeholder="e.g., pendant, chain, cuff",
+                help="Add custom tags separated by commas"
             )
             
-            jewelry_file = st.file_uploader(
-                f"Upload {location_name} Reference (Optional)",
-                type=['jpg', 'jpeg', 'png'],
-                key=f"{location_key}_file"
-            )
-            if jewelry_file:
-                handle_image_upload(jewelry_file, location_key, location_key)
+            # Combine all tags
+            all_tags = selected_default_tags.copy()
+            if custom_tags_input:
+                custom_tags = [tag.strip().lower() for tag in custom_tags_input.split(",") if tag.strip()]
+                all_tags.extend(custom_tags)
+            
+            # Remove duplicates and empty tags
+            all_tags = list(set([tag.lower() for tag in all_tags if tag.strip()]))
+            
+            st.divider()
+            
+            # Add button
+            if st.button("Add Jewelry/Accessory", type="secondary"):
+                if not all_tags:
+                    st.warning("Please select at least one tag or add a custom tag.")
+                else:
+                    new_jewelry = {
+                        "tags": all_tags,
+                        "text": jewelry_text,
+                        "image_url": new_jewelry_url
+                    }
+                    st.session_state.jewelry_items.append(new_jewelry)
+                    st.success(f"Added jewelry/accessory with tags: {', '.join(all_tags)}")
+                    # Clear the form - increment form counter to reset all widgets
+                    st.session_state.jewelry_form_counter += 1
+                    # Clear the uploaded image URL
+                    if "new_jewelry_url" in st.session_state:
+                        del st.session_state.new_jewelry_url
+                    st.rerun()
+        else:
+            st.info("👆 Please add an image or description first, then select tags.")
 
 # Environment & Photography Tab (Combined)
 with tab4:
