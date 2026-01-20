@@ -162,7 +162,8 @@ class GeminiPhotoshootClient:
         image_parts: List[Dict[str, Any]],
         aspect_ratio: str,
         batch_index: Optional[int] = None,
-        batch_variety: Optional[str] = None
+        batch_variety: Optional[str] = None,
+        image_size: str = "4K"
     ) -> Tuple[bytes, str]:
         """
         Generate image using Gemini API
@@ -173,6 +174,7 @@ class GeminiPhotoshootClient:
             aspect_ratio: Target aspect ratio (e.g., "4:5", "9:16")
             batch_index: Index for batch generation (for variations)
             batch_variety: Type of variety ("subtle_variations" or "dynamic_angles")
+            image_size: Image resolution - "1K", "2K", or "4K" (default: "4K")
         
         Returns:
             Tuple of (image_bytes, mime_type)
@@ -224,7 +226,8 @@ class GeminiPhotoshootClient:
             "generationConfig": {
                 "responseModalities": ["IMAGE"],
                 "imageConfig": {
-                    "aspectRatio": aspect_ratio
+                    "aspectRatio": aspect_ratio,
+                    "imageSize": image_size  # Image resolution: "1K", "2K", or "4K"
                 }
             }
         }

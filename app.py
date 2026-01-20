@@ -446,7 +446,8 @@ def build_config():
         },
         "output": {
             "count": st.session_state.get("image_count", 2),
-            "batch_variety": "subtle_variations" if "Subtle" in st.session_state.get("batch_variety", "Subtle Variations") else "dynamic_angles"
+            "batch_variety": "subtle_variations" if "Subtle" in st.session_state.get("batch_variety", "Subtle Variations") else "dynamic_angles",
+            "image_quality": st.session_state.get("image_quality", "4K")
         }
     }
     
@@ -764,14 +765,28 @@ with tab5:
         
         st.divider()
         
-        st.markdown("##### Batch Variety")
-        batch_variety = st.radio(
-            "Variety",
-            ["Subtle Variations", "Dynamic Angles"],
-            key="batch_variety",
-            horizontal=True,
-            label_visibility="collapsed"
-        )
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("##### Batch Variety")
+            batch_variety = st.radio(
+                "Variety",
+                ["Subtle Variations", "Dynamic Angles"],
+                key="batch_variety",
+                horizontal=True,
+                label_visibility="collapsed"
+            )
+        
+        with col2:
+            st.markdown("##### Image Quality")
+            image_quality = st.selectbox(
+                "Quality",
+                ["1K", "2K", "4K"],
+                key="image_quality",
+                index=2,  # Default to 4K
+                label_visibility="collapsed",
+                help="Select image resolution: 1K (1024px), 2K (2048px), or 4K (4096px)"
+            )
         
         st.divider()
 
@@ -825,6 +840,7 @@ if generate_clicked:
     # Generate images
     image_count = config["output"]["count"]
     batch_variety = config["output"]["batch_variety"]
+    image_quality = config["output"]["image_quality"]
     
     generated_images = []
     progress_bar = st.progress(0)
@@ -840,7 +856,8 @@ if generate_clicked:
                 image_parts,
                 aspect_ratio,
                 batch_index=i,
-                batch_variety=batch_variety
+                batch_variety=batch_variety,
+                image_size=image_quality
             )
             
             with st.spinner(f"Uploading image {i + 1} to S3..."):
