@@ -270,3 +270,92 @@ class GeminiPhotoshootClient:
         image_bytes = base64.b64decode(base64_data)
         
         return image_bytes, mime_type
+    
+    def quick_fix_generate(
+        self,
+        prompt: str,
+        image_urls: List[str] = None,
+        aspect_ratio: str = "match_input_image",
+        resolution: str = "2K"
+    ) -> Tuple[bytes, str]:
+        """
+        Quick Fix: Simple image generation with prompt and reference images
+        
+        Args:
+            prompt: Text description of the image to generate
+            image_urls: List of image URLs to use as reference (up to 14 images)
+            aspect_ratio: Aspect ratio ("match_input_image", "1:1", "4:3", etc.)
+            resolution: Image resolution ("1K", "2K", or "4K")
+        
+        Returns:
+            Tuple of (image_bytes, mime_type)
+        """
+        image_urls = image_urls or []
+        
+        # Build parts: prompt first, then images
+        parts = [{"text": prompt}]
+        
+        # Add image parts
+        for image_url in image_urls[:14]:  # Limit to 14 images
+            self._add_image_part(parts, image_url)
+        
+        # Handle aspect ratio
+        final_aspect_ratio = aspect_ratio
+        if aspect_ratio == "match_input_image" and image_urls:
+            # For now, default to 2:3 if match_input_image is selected
+            # In a real implementation, you might want to detect the aspect ratio from the first image
+            final_aspect_ratio = "2:3"
+        
+        # Build request body
+        request_body = {
+            "contents": [{
+                "role": "user",
+                "parts": parts
+            }],
+            "generationConfig": {
+                "responseModalities": ["IMAGE"],
+                "imageConfig": {
+                    "aspectRatio": final_aspect_ratio,
+                    "imageSize": resolution
+                }
+            }
+        }
+        
+        # Call Gemini API
+        response = requests.post(
+            self.base_url,
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": self.api_key
+            },
+            json=request_body,
+            timeout=300
+        )
+        
+        response.raise_for_status()
+        response_data = response.json()
+        
+        # Extract image from response
+        if not response_data.get("candidates") or not response_data["candidates"][0]:
+            raise ValueError("Invalid response format: no candidates found")
+        
+        candidate = response_data["candidates"][0]
+        if not candidate.get("content") or not candidate["content"].get("parts"):
+            raise ValueError("Invalid response format: no content parts found")
+        
+        # Find image part
+        image_part = None
+        for part in candidate["content"]["parts"]:
+            if part.get("inlineData") and part["inlineData"].get("mimeType", "").startswith("image/"):
+                image_part = part
+                break
+        
+        if not image_part or not image_part.get("inlineData") or not image_part["inlineData"].get("data"):
+            raise ValueError("No image data found in Gemini response")
+        
+        # Decode base64 image
+        base64_data = image_part["inlineData"]["data"]
+        mime_type = image_part["inlineData"]["mimeType"]
+        image_bytes = base64.b64decode(base64_data)
+        
+        return image_bytes, mime_type

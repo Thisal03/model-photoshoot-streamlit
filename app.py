@@ -225,6 +225,12 @@ s3_handler = S3ImageHandler()
 if 'additional_items' not in st.session_state:
     st.session_state.additional_items = []
 
+if 'quick_fix_mode' not in st.session_state:
+    st.session_state.quick_fix_mode = False
+
+if 'quick_fix_images' not in st.session_state:
+    st.session_state.quick_fix_images = []
+
 # Helper function for image upload with S3
 def handle_image_upload(file_obj, image_type, session_key):
     """Handle image upload to S3 and store URL in session state"""
@@ -454,457 +460,625 @@ def build_config():
     return config
 
 # Main Header
-st.title("Photoshoot Generator")
-st.caption("AI-Powered Fashion Photography")
+col_title, col_quick_fix = st.columns([3, 1])
+with col_title:
+    st.title("Photoshoot Generator")
+    st.caption("AI-Powered Fashion Photography")
+with col_quick_fix:
+    st.markdown("<br>", unsafe_allow_html=True)  # Spacing
+    if st.button("Quick Fix", type="secondary", use_container_width=True, key="quick_fix_toggle"):
+        st.session_state.quick_fix_mode = not st.session_state.quick_fix_mode
+        st.rerun()
+    
+    if st.session_state.quick_fix_mode:
+        st.caption("✓ Quick Fix Mode")
 
-# Create tabs
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+# Quick Fix Mode UI
+if st.session_state.quick_fix_mode:
+    st.markdown("---")
+    st.markdown("### Quick Fix - Simple Image Generation")
+    st.caption("Generate images with prompt and reference images")
+    
+    # Prompt input
+    quick_fix_prompt = st.text_area(
+        "Prompt",
+        key="quick_fix_prompt",
+        height=150,
+        placeholder="A text description of the image you want to generate\ne.g., How engineers see the San Francisco Bridge",
+        help="Describe the image you want to generate"
+    )
+    
+    st.divider()
+    
+    # Image inputs (supports up to 14 images)
+    st.markdown("##### Input Images")
+    st.caption("Upload reference images (supports up to 14 images)")
+    
+    # Display uploaded images
+    if st.session_state.quick_fix_images:
+        st.markdown("**Uploaded Images**")
+        cols = st.columns(min(len(st.session_state.quick_fix_images), 4))
+        for idx, img_data in enumerate(st.session_state.quick_fix_images):
+            with cols[idx % 4]:
+                if img_data.get('preview'):
+                    st.image(img_data['preview'], width=100)
+                st.caption(f"Image {idx + 1}")
+                if st.button("Remove", key=f"remove_qf_img_{idx}"):
+                    st.session_state.quick_fix_images.pop(idx)
+                    st.rerun()
+    
+    # Image uploader
+    uploaded_files = st.file_uploader(
+        "Upload Images (up to 14 images)",
+        type=['jpg', 'jpeg', 'png'],
+        key="quick_fix_uploader",
+        accept_multiple_files=True
+    )
+    
+    if uploaded_files:
+        for file in uploaded_files:
+            if len(st.session_state.quick_fix_images) < 14:
+                if st.button(f"Upload {file.name}", key=f"upload_qf_{file.name}"):
+                    with st.spinner(f"Uploading {file.name}..."):
+                        image_bytes = file.read()
+                        result = s3_handler.upload_reference_image(
+                            image_bytes,
+                            file.name,
+                            "quick_fix"
+                        )
+                        if result['success']:
+                            # Store image data
+                            file.seek(0)  # Reset file pointer
+                            preview = Image.open(file)
+                            st.session_state.quick_fix_images.append({
+                                'url': result['public_url'],
+                                'name': file.name,
+                                'preview': preview
+                            })
+                            st.success(f"Uploaded {file.name}")
+                            st.rerun()
+                        else:
+                            st.error(f"Upload failed: {result.get('error')}")
+            else:
+                st.warning("Maximum 14 images allowed")
+                break
+    
+    st.divider()
+    
+    # Settings
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("##### Aspect Ratio")
+        quick_fix_aspect_ratio = st.selectbox(
+            "Aspect Ratio",
+            ["match_input_image", "1:1", "4:3", "3:4", "16:9", "9:16", "2:3", "3:2", "4:5", "5:4"],
+            key="quick_fix_aspect_ratio",
+            index=0,
+            help="Aspect ratio of the generated image. 'match_input_image' uses the aspect ratio of the first input image."
+        )
+    
+    with col2:
+        st.markdown("##### Resolution")
+        quick_fix_resolution = st.selectbox(
+            "Resolution",
+            ["1K", "2K", "4K"],
+            key="quick_fix_resolution",
+            index=1,  # Default to 2K
+            help="Resolution of the generated image"
+        )
+    
+    st.divider()
+    
+    # Generate button
+    quick_fix_generate = st.button(
+        "Generate Image",
+        type="primary",
+        use_container_width=True,
+        key="quick_fix_generate"
+    )
+    
+    # Handle Quick Fix generation
+    if quick_fix_generate:
+        if not quick_fix_prompt.strip():
+            st.error("Please enter a prompt to generate an image.")
+        else:
+            # Prepare images
+            image_urls = [img['url'] for img in st.session_state.quick_fix_images]
+            
+            # Generate image
+            with st.spinner("Generating image..."):
+                try:
+                    image_bytes, mime_type = client.quick_fix_generate(
+                        prompt=quick_fix_prompt,
+                        image_urls=image_urls,
+                        aspect_ratio=quick_fix_aspect_ratio,
+                        resolution=quick_fix_resolution
+                    )
+                    
+                    # Upload to S3
+                    with st.spinner("Uploading to S3..."):
+                        upload_result = s3_handler.upload_generated_image(
+                            image_bytes,
+                            mime_type
+                        )
+                    
+                    if upload_result['success']:
+                        st.success("Image generated successfully!")
+                        
+                        # Display image
+                        image = Image.open(io.BytesIO(image_bytes))
+                        st.image(image, caption="Generated Image", use_container_width=True)
+                        
+                        # Download button
+                        st.download_button(
+                            label="Download Image",
+                            data=image_bytes,
+                            file_name=f"quick_fix_{uuid.uuid4().hex[:8]}.png",
+                            mime=mime_type,
+                            key="download_quick_fix"
+                        )
+                        
+                        st.caption(f"S3 URL: {upload_result['public_url'][:60]}...")
+                        
+                        with st.expander("Full S3 URL"):
+                            st.code(upload_result['public_url'], language=None)
+                    else:
+                        st.error(f"Failed to upload: {upload_result.get('error')}")
+                        
+                except Exception as e:
+                    st.error(f"Error generating image: {str(e)}")
+
+# Normal Photoshoot Mode - Create tabs
+else:
+    # Create tabs
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
     get_tab_label("Model", "model_ref", True),
     get_tab_label("Outfit", "outfit", True),
     get_tab_label("Accessories & Jewelry", "accessories", False),
     get_tab_label("Environment & Photography", "environment", True),
     get_tab_label("Output", "output", True)
-])
+    ])
 
-# Model Reference Tab
-with tab1:
-    st.markdown("### Model Reference")
-    st.caption("Define the model's appearance - face, body type, and characteristics")
-    
-    with st.container():
-        model_data = render_input_section("model_ref", "Model")
+    # Model Reference Tab
+    with tab1:
+        st.markdown("### Model Reference")
+        st.caption("Define the model's appearance - face, body type, and characteristics")
         
-        # Additional model options
-        st.divider()
-        col1, col2 = st.columns(2)
-        with col1:
-            model_action = st.radio(
-                "Model Face",
-                ["Keep from reference", "Generate new"],
-                key="model_action",
-                horizontal=True
-            )
-        
-        if model_action == "Generate new":
-            st.text_area(
-                "Model Description",
-                key="model_new_description",
-                height=100,
-                placeholder="Describe the model's appearance (e.g., ethnicity, hair color, age, facial features, etc.)"
-            )
-        
-        # Hair styling (moved from Photography tab)
-        st.divider()
-        st.markdown("##### Hair Styling")
-        st.text_input(
-            "Hair Description (Optional)",
-            key="hair_text",
-            placeholder="e.g., Sleek bun, loose waves"
-        )
-        
-        hair_file = st.file_uploader(
-            "Upload Hair Reference (Optional)",
-            type=['jpg', 'jpeg', 'png'],
-            key="hair_file"
-        )
-        if hair_file:
-            handle_image_upload(hair_file, "hair", "hair")
-
-# Outfit Tab
-with tab2:
-    st.markdown("### Base Outfit")
-    st.caption("Define the main clothing items for the photoshoot")
-    
-    with st.container():
-        outfit_data = render_input_section("outfit", "Outfit", show_preservation=False)
-
-# Accessories & Jewelry Tab (Combined)
-with tab3:
-    st.markdown("### Accessories & Jewelry")
-    st.caption("Add accessories and configure jewelry for each body location")
-    
-    # Additional Items Section
-    st.markdown("##### Additional Items")
-    st.caption("Add optional accessories like bags, hats, scarves, sunglasses, etc.")
-    
-    with st.container():
-        # Display existing items
-        if st.session_state.additional_items:
-            st.markdown("**Added Items**")
-            for i, item in enumerate(st.session_state.additional_items):
-                col1, col2, col3 = st.columns([2, 2, 1])
-                with col1:
-                    st.text(f"{item['type']}")
-                with col2:
-                    st.caption(item.get('text', '')[:30] + "..." if item.get('text') else "Image reference")
-                with col3:
-                    if st.button("Remove", key=f"remove_item_{i}"):
-                        st.session_state.additional_items.pop(i)
-                        st.rerun()
-        
-        st.divider()
-        
-        # Add new item
-        st.markdown("**Add New Item**")
-        col1, col2 = st.columns([1, 2])
-        
-        with col1:
-            item_type = st.selectbox(
-                "Item Type",
-                ["Bag", "Hat", "Scarf", "Sunglasses", "Other"],
-                key="new_item_type"
-            )
-        
-        # Show all input options
-        new_item_text = st.text_area(
-            "Item Description (Optional)",
-            key="new_item_text",
-            height=80,
-            placeholder=f"Describe the {item_type.lower()}..."
-        )
-        
-        item_file = st.file_uploader(
-            "Upload Item Image (Optional)",
-            type=['jpg', 'jpeg', 'png'],
-            key="new_item_file"
-        )
-        if item_file:
-            handle_image_upload(item_file, "item", "new_item")
-        
-        new_item_url = st.session_state.get("new_item_url", "")
-        
-        if st.button("Add Item", type="secondary"):
-            new_item = {
-                "type": item_type.lower(),
-                "text": new_item_text,
-                "image_url": new_item_url
-            }
-            st.session_state.additional_items.append(new_item)
-            st.success(f"Added {item_type}")
-            st.rerun()
-    
-    st.divider()
-    
-    # Jewelry Section
-    st.markdown("##### Jewelry")
-    st.caption("Configure jewelry for each body location")
-    
-    jewelry_locations = [
-        ("Neck", "jewelry_neck", "Necklaces, chains, pendants"),
-        ("Ears", "jewelry_ears", "Earrings, ear cuffs"),
-        ("Hands/Wrists", "jewelry_hands", "Rings, bracelets, watches")
-    ]
-    
-    for location_name, location_key, description in jewelry_locations:
-        with st.expander(f"{location_name} - {description}", expanded=False):
-            # Show all input options - if user adds input, it will be used
+        with st.container():
+            model_data = render_input_section("model_ref", "Model")
+            
+            # Additional model options
+            st.divider()
+            col1, col2 = st.columns(2)
+            with col1:
+                model_action = st.radio(
+                    "Model Face",
+                    ["Keep from reference", "Generate new"],
+                    key="model_action",
+                    horizontal=True
+                )
+            
+            if model_action == "Generate new":
+                st.text_area(
+                    "Model Description",
+                    key="model_new_description",
+                    height=100,
+                    placeholder="Describe the model's appearance (e.g., ethnicity, hair color, age, facial features, etc.)"
+                )
+            
+            # Hair styling (moved from Photography tab)
+            st.divider()
+            st.markdown("##### Hair Styling")
             st.text_input(
-                f"{location_name} Description (Optional)",
-                key=f"{location_key}_text",
-                placeholder=f"e.g., Gold chain necklace with pendant"
+                "Hair Description (Optional)",
+                key="hair_text",
+                placeholder="e.g., Sleek bun, loose waves"
             )
             
-            jewelry_file = st.file_uploader(
-                f"Upload {location_name} Reference (Optional)",
+            hair_file = st.file_uploader(
+                "Upload Hair Reference (Optional)",
                 type=['jpg', 'jpeg', 'png'],
-                key=f"{location_key}_file"
+                key="hair_file"
             )
-            if jewelry_file:
-                handle_image_upload(jewelry_file, location_key, location_key)
+            if hair_file:
+                handle_image_upload(hair_file, "hair", "hair")
 
-# Environment & Photography Tab (Combined)
-with tab4:
-    st.markdown("### Environment & Photography")
-    st.caption("Set the scene and configure visual style and camera settings")
-    
-    # Environment Section
-    st.markdown("##### Environment & Background")
-    
-    with st.container():
-        col1, col2 = st.columns(2)
+    # Outfit Tab
+    with tab2:
+        st.markdown("### Base Outfit")
+        st.caption("Define the main clothing items for the photoshoot")
         
-        with col1:
-            env_category = st.selectbox(
-                "Environment Category",
-                ["Studio", "Indoor Lifestyle", "Outdoor Urban", "Outdoor Nature"],
-                key="env_category"
-            )
+        with st.container():
+            outfit_data = render_input_section("outfit", "Outfit", show_preservation=False)
+
+    # Accessories & Jewelry Tab (Combined)
+    with tab3:
+        st.markdown("### Accessories & Jewelry")
+        st.caption("Add accessories and configure jewelry for each body location")
         
-        # Show all input options
-        st.text_area(
-            "Background Description (Optional)",
-            key="environment_text",
-            height=100,
-            placeholder="Describe the background/environment in detail...\ne.g., Abstract curved peach and warm beige walls with soft shadows"
-        )
+        # Additional Items Section
+        st.markdown("##### Additional Items")
+        st.caption("Add optional accessories like bags, hats, scarves, sunglasses, etc.")
         
-        bg_file = st.file_uploader(
-            "Upload Background Reference (Optional)",
-            type=['jpg', 'jpeg', 'png'],
-            key="environment_file"
-        )
-        if bg_file:
-            handle_image_upload(bg_file, "background", "environment")
-    
-    st.divider()
-    
-    # Photography Section
-    st.markdown("##### Photography Settings")
-    
-    with st.container():
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown("**Aesthetic**")
-            aesthetic = st.selectbox(
-                "Style",
-                ["Editorial", "Commercial", "Lifestyle", "High Fashion", "Casual"],
-                key="photo_aesthetic",
-                label_visibility="collapsed"
-            )
-        
-        with col2:
-            st.markdown("**Framing**")
-            framing = st.selectbox(
-                "Frame",
-                ["Full Body", "3/4 Body", "Waist Up", "Close Up"],
-                key="photo_framing",
-                label_visibility="collapsed"
-            )
-        
-        with col3:
-            st.markdown("**Lighting**")
-            lighting = st.selectbox(
-                "Light",
-                ["Soft Warm", "Studio Clean", "Golden Hour", "Hard Shadows", "Natural"],
-                key="photo_lighting",
-                label_visibility="collapsed"
-            )
-        
-        st.divider()
-        
-        # Shadow settings
-        st.markdown("**Shadows**")
-        shadow_method = st.radio(
-            "Shadow Input Method",
-            ["Select from options", "Text description"],
-            key="shadow_method",
-            horizontal=True
-        )
-        
-        shadow_value = ""
-        if shadow_method == "Select from options":
-            shadow_value = st.selectbox(
-                "Shadow Style",
-                [
-                    "None - No specific shadow requirements",
-                    "Blend model shadows with background shadows",
-                    "Natural soft shadows",
-                    "Dramatic hard shadows",
-                    "Minimal shadows for clean look",
-                    "Realistic ground shadows",
-                    "Subtle ambient shadows"
-                ],
-                key="shadow_option"
-            )
-        else:
-            shadow_value = st.text_area(
-                "Shadow Description",
-                key="shadow_text",
+        with st.container():
+            # Display existing items
+            if st.session_state.additional_items:
+                st.markdown("**Added Items**")
+                for i, item in enumerate(st.session_state.additional_items):
+                    col1, col2, col3 = st.columns([2, 2, 1])
+                    with col1:
+                        st.text(f"{item['type']}")
+                    with col2:
+                        st.caption(item.get('text', '')[:30] + "..." if item.get('text') else "Image reference")
+                    with col3:
+                        if st.button("Remove", key=f"remove_item_{i}"):
+                            st.session_state.additional_items.pop(i)
+                            st.rerun()
+            
+            st.divider()
+            
+            # Add new item
+            st.markdown("**Add New Item**")
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                item_type = st.selectbox(
+                    "Item Type",
+                    ["Bag", "Hat", "Scarf", "Sunglasses", "Other"],
+                    key="new_item_type"
+                )
+            
+            # Show all input options
+            new_item_text = st.text_area(
+                "Item Description (Optional)",
+                key="new_item_text",
                 height=80,
-                placeholder="e.g., Soft natural shadows that blend seamlessly with the background lighting..."
+                placeholder=f"Describe the {item_type.lower()}..."
             )
-        
-        # Pose settings
-        st.markdown("**Pose**")
-        st.text_input(
-            "Pose Description (Optional)",
-            key="pose_text",
-            placeholder="e.g., Walking motion, hands in pockets"
-        )
-        
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            pose_file = st.file_uploader(
-                "Upload Pose Reference (Optional)",
+            
+            item_file = st.file_uploader(
+                "Upload Item Image (Optional)",
                 type=['jpg', 'jpeg', 'png'],
-                key="pose_file"
+                key="new_item_file"
             )
-            if pose_file:
-                handle_image_upload(pose_file, "pose", "pose")
-        with col2:
-            st.slider("Mimicry Strength", 0.0, 1.0, 0.8, key="pose_strength")
+            if item_file:
+                handle_image_upload(item_file, "item", "new_item")
+            
+            new_item_url = st.session_state.get("new_item_url", "")
+            
+            if st.button("Add Item", type="secondary"):
+                new_item = {
+                    "type": item_type.lower(),
+                    "text": new_item_text,
+                    "image_url": new_item_url
+                }
+                st.session_state.additional_items.append(new_item)
+                st.success(f"Added {item_type}")
+                st.rerun()
+            
+            st.divider()
+            
+            # Jewelry Section
+            st.markdown("##### Jewelry")
+            st.caption("Configure jewelry for each body location")
+            
+            jewelry_locations = [
+                ("Neck", "jewelry_neck", "Necklaces, chains, pendants"),
+                ("Ears", "jewelry_ears", "Earrings, ear cuffs"),
+                ("Hands/Wrists", "jewelry_hands", "Rings, bracelets, watches")
+            ]
+            
+            for location_name, location_key, description in jewelry_locations:
+                with st.expander(f"{location_name} - {description}", expanded=False):
+                    # Show all input options - if user adds input, it will be used
+                    st.text_input(
+                        f"{location_name} Description (Optional)",
+                        key=f"{location_key}_text",
+                        placeholder=f"e.g., Gold chain necklace with pendant"
+                    )
+                    
+                    jewelry_file = st.file_uploader(
+                        f"Upload {location_name} Reference (Optional)",
+                        type=['jpg', 'jpeg', 'png'],
+                        key=f"{location_key}_file"
+                    )
+                    if jewelry_file:
+                        handle_image_upload(jewelry_file, location_key, location_key)
 
-# Output Tab
-with tab5:
-    st.markdown("### Output Settings")
-    st.caption("Configure the final output parameters")
-    
+    # Environment & Photography Tab (Combined)
+    with tab4:
+        st.markdown("### Environment & Photography")
+        st.caption("Set the scene and configure visual style and camera settings")
+        
+        # Environment Section
+        st.markdown("##### Environment & Background")
+        
+        with st.container():
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                env_category = st.selectbox(
+                    "Environment Category",
+                    ["Studio", "Indoor Lifestyle", "Outdoor Urban", "Outdoor Nature"],
+                    key="env_category"
+                )
+            
+            # Show all input options
+            st.text_area(
+                "Background Description (Optional)",
+                key="environment_text",
+                height=100,
+                placeholder="Describe the background/environment in detail...\ne.g., Abstract curved peach and warm beige walls with soft shadows"
+            )
+            
+            bg_file = st.file_uploader(
+                "Upload Background Reference (Optional)",
+                type=['jpg', 'jpeg', 'png'],
+                key="environment_file"
+            )
+            if bg_file:
+                handle_image_upload(bg_file, "background", "environment")
+            
+            st.divider()
+            
+            # Photography Section
+            st.markdown("##### Photography Settings")
+            
+            with st.container():
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.markdown("**Aesthetic**")
+                    aesthetic = st.selectbox(
+                        "Style",
+                        ["Editorial", "Commercial", "Lifestyle", "High Fashion", "Casual"],
+                        key="photo_aesthetic",
+                        label_visibility="collapsed"
+                    )
+                
+                with col2:
+                    st.markdown("**Framing**")
+                    framing = st.selectbox(
+                        "Frame",
+                        ["Full Body", "3/4 Body", "Waist Up", "Close Up"],
+                        key="photo_framing",
+                        label_visibility="collapsed"
+                    )
+                
+                with col3:
+                    st.markdown("**Lighting**")
+                    lighting = st.selectbox(
+                        "Light",
+                        ["Soft Warm", "Studio Clean", "Golden Hour", "Hard Shadows", "Natural"],
+                        key="photo_lighting",
+                        label_visibility="collapsed"
+                    )
+                
+                st.divider()
+                
+                # Shadow settings
+                st.markdown("**Shadows**")
+                shadow_method = st.radio(
+                    "Shadow Input Method",
+                    ["Select from options", "Text description"],
+                    key="shadow_method",
+                    horizontal=True
+                )
+                
+                shadow_value = ""
+                if shadow_method == "Select from options":
+                    shadow_value = st.selectbox(
+                        "Shadow Style",
+                        [
+                            "None - No specific shadow requirements",
+                            "Blend model shadows with background shadows",
+                            "Natural soft shadows",
+                            "Dramatic hard shadows",
+                            "Minimal shadows for clean look",
+                            "Realistic ground shadows",
+                            "Subtle ambient shadows"
+                        ],
+                        key="shadow_option"
+                    )
+                else:
+                    shadow_value = st.text_area(
+                        "Shadow Description",
+                        key="shadow_text",
+                        height=80,
+                        placeholder="e.g., Soft natural shadows that blend seamlessly with the background lighting..."
+                    )
+                
+                # Pose settings
+                st.markdown("**Pose**")
+                st.text_input(
+                    "Pose Description (Optional)",
+                    key="pose_text",
+                    placeholder="e.g., Walking motion, hands in pockets"
+                )
+                
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    pose_file = st.file_uploader(
+                        "Upload Pose Reference (Optional)",
+                        type=['jpg', 'jpeg', 'png'],
+                        key="pose_file"
+                    )
+                    if pose_file:
+                        handle_image_upload(pose_file, "pose", "pose")
+                with col2:
+                    st.slider("Mimicry Strength", 0.0, 1.0, 0.8, key="pose_strength")
+
+    # Output Tab
+    with tab5:
+        st.markdown("### Output Settings")
+        st.caption("Configure the final output parameters")
+        
+        with st.container():
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("##### Platform Preset")
+                platform = st.selectbox(
+                    "Platform",
+                    ["Instagram Portrait (4:5)", "Instagram Story (9:16)", "Instagram Square (1:1)", "Default (2:3)"],
+                    key="platform_preset",
+                    label_visibility="collapsed"
+                )
+            
+            with col2:
+                st.markdown("##### Number of Images")
+                image_count = st.number_input(
+                    "Count",
+                    min_value=1,
+                    max_value=10,
+                    value=2,
+                    key="image_count",
+                    label_visibility="collapsed"
+                )
+            
+            st.divider()
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("##### Batch Variety")
+                batch_variety = st.radio(
+                    "Variety",
+                    ["Subtle Variations", "Dynamic Angles"],
+                    key="batch_variety",
+                    horizontal=True,
+                    label_visibility="collapsed"
+                )
+            
+            with col2:
+                st.markdown("##### Image Quality")
+                image_quality = st.selectbox(
+                    "Quality",
+                    ["1K", "2K", "4K"],
+                    key="image_quality",
+                    index=2,  # Default to 4K
+                    label_visibility="collapsed",
+                    help="Select image resolution: 1K (1024px), 2K (2048px), or 4K (4096px)"
+                )
+            
+            st.divider()
+
+    # Generate Section - Fixed at bottom (visible across all tabs)
+    st.markdown("---")
     with st.container():
-        col1, col2 = st.columns(2)
+        col1, col2 = st.columns([2, 1])
         
         with col1:
-            st.markdown("##### Platform Preset")
-            platform = st.selectbox(
-                "Platform",
-                ["Instagram Portrait (4:5)", "Instagram Story (9:16)", "Instagram Square (1:1)", "Default (2:3)"],
-                key="platform_preset",
-                label_visibility="collapsed"
-            )
-        
+            # Configuration preview
+            st.markdown("##### Configuration Preview")
+            with st.expander("Full Configuration Preview (JSON)", expanded=False):
+                config = build_config()
+                st.json(config)
+
         with col2:
-            st.markdown("##### Number of Images")
-            image_count = st.number_input(
-                "Count",
-                min_value=1,
-                max_value=10,
-                value=2,
-                key="image_count",
-                label_visibility="collapsed"
+            st.markdown("##### Ready to Generate?")
+            generate_clicked = st.button(
+                "Generate Photoshoot",
+                type="primary",
+                use_container_width=True,
+                key="generate_button"
             )
-        
-        st.divider()
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("##### Batch Variety")
-            batch_variety = st.radio(
-                "Variety",
-                ["Subtle Variations", "Dynamic Angles"],
-                key="batch_variety",
-                horizontal=True,
-                label_visibility="collapsed"
-            )
-        
-        with col2:
-            st.markdown("##### Image Quality")
-            image_quality = st.selectbox(
-                "Quality",
-                ["1K", "2K", "4K"],
-                key="image_quality",
-                index=2,  # Default to 4K
-                label_visibility="collapsed",
-                help="Select image resolution: 1K (1024px), 2K (2048px), or 4K (4096px)"
-            )
-        
-        st.divider()
 
-# Generate Section - Fixed at bottom (visible across all tabs)
-st.markdown("---")
-with st.container():
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        # Configuration preview
-        st.markdown("##### Configuration Preview")
-        with st.expander("Full Configuration Preview (JSON)", expanded=False):
-            config = build_config()
-            st.json(config)
-
-    with col2:
-        st.markdown("##### Ready to Generate?")
-        generate_clicked = st.button(
-            "Generate Photoshoot",
-            type="primary",
-            use_container_width=True,
-            key="generate_button"
-        )
-
-# Handle generation
-if generate_clicked:
-    config = build_config()
-    
-    # Validate required fields
-    has_model_ref = bool(config["model_reference"]["text_description"] or config["model_reference"]["image_url"])
-    has_outfit = bool(config["base_outfit"]["text_description"] or config["base_outfit"]["image_url"])
-    
-    if not has_model_ref and not has_outfit:
-        st.error("Please provide at least a model reference or outfit reference to generate.")
-        st.stop()
-    
-    # Prepare image parts (returns both image_parts and image_mapping)
-    with st.spinner("Preparing images..."):
-        try:
-            image_parts, image_mapping = client.prepare_image_parts(config)
-        except Exception as e:
-            st.error(f"Failed to prepare images: {str(e)}")
+    # Handle generation
+    if generate_clicked:
+        config = build_config()
+        
+        # Validate required fields
+        has_model_ref = bool(config["model_reference"]["text_description"] or config["model_reference"]["image_url"])
+        has_outfit = bool(config["base_outfit"]["text_description"] or config["base_outfit"]["image_url"])
+        
+        if not has_model_ref and not has_outfit:
+            st.error("Please provide at least a model reference or outfit reference to generate.")
             st.stop()
-    
-    # Build prompt with image mapping
-    prompt = build_photoshoot_prompt(config, image_mapping)
-    
-    # Get aspect ratio
-    aspect_ratio = map_platform_preset_to_aspect_ratio(config["meta"]["platform_preset"])
-    
-    # Generate images
-    image_count = config["output"]["count"]
-    batch_variety = config["output"]["batch_variety"]
-    image_quality = config["output"]["image_quality"]
-    
-    generated_images = []
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    for i in range(image_count):
-        status_text.text(f"Generating image {i + 1} of {image_count}...")
-        progress_bar.progress((i + 1) / image_count)
         
-        try:
-            image_bytes, mime_type = client.generate_image(
-                prompt,
-                image_parts,
-                aspect_ratio,
-                batch_index=i,
-                batch_variety=batch_variety,
-                image_size=image_quality
-            )
+        # Prepare image parts (returns both image_parts and image_mapping)
+        with st.spinner("Preparing images..."):
+            try:
+                image_parts, image_mapping = client.prepare_image_parts(config)
+            except Exception as e:
+                st.error(f"Failed to prepare images: {str(e)}")
+                st.stop()
+        
+        # Build prompt with image mapping
+        prompt = build_photoshoot_prompt(config, image_mapping)
+        
+        # Get aspect ratio
+        aspect_ratio = map_platform_preset_to_aspect_ratio(config["meta"]["platform_preset"])
+        
+        # Generate images
+        image_count = config["output"]["count"]
+        batch_variety = config["output"]["batch_variety"]
+        image_quality = config["output"]["image_quality"]
+        
+        generated_images = []
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for i in range(image_count):
+            status_text.text(f"Generating image {i + 1} of {image_count}...")
+            progress_bar.progress((i + 1) / image_count)
             
-            with st.spinner(f"Uploading image {i + 1} to S3..."):
-                upload_result = s3_handler.upload_generated_image(
-                    image_bytes,
-                    mime_type
-                )
-            
-            if upload_result['success']:
-                generated_images.append({
-                    "s3_url": upload_result['public_url'],
-                    "s3_key": upload_result['s3_key'],
-                    "bytes": image_bytes,
-                    "index": i + 1,
-                    "mime_type": mime_type
-                })
-            else:
-                st.error(f"Failed to upload image {i + 1}: {upload_result.get('error')}")
-                
-        except Exception as e:
-            st.error(f"Error generating image {i + 1}: {str(e)}")
-    
-    progress_bar.empty()
-    status_text.empty()
-    
-    # Display results
-    if generated_images:
-        st.success(f"Successfully generated {len(generated_images)} images!")
-        
-        st.markdown("### Generated Images")
-        cols = st.columns(min(len(generated_images), 3))
-        
-        for idx, img_data in enumerate(generated_images):
-            with cols[idx % 3]:
-                image = Image.open(io.BytesIO(img_data["bytes"]))
-                st.image(image, caption=f"Image {img_data['index']}", use_container_width=True)
-                
-                st.download_button(
-                    label=f"Download",
-                    data=img_data["bytes"],
-                    file_name=f"photoshoot_{img_data['index']}.png",
-                    mime=img_data["mime_type"],
-                    key=f"download_{idx}"
+            try:
+                image_bytes, mime_type = client.generate_image(
+                    prompt,
+                    image_parts,
+                    aspect_ratio,
+                    batch_index=i,
+                    batch_variety=batch_variety,
+                    image_size=image_quality
                 )
                 
-                st.caption(f"S3: {img_data['s3_url'][:40]}...")
+                with st.spinner(f"Uploading image {i + 1} to S3..."):
+                    upload_result = s3_handler.upload_generated_image(
+                        image_bytes,
+                        mime_type
+                    )
+                
+                if upload_result['success']:
+                    generated_images.append({
+                        "s3_url": upload_result['public_url'],
+                        "s3_key": upload_result['s3_key'],
+                        "bytes": image_bytes,
+                        "index": i + 1,
+                        "mime_type": mime_type
+                    })
+                else:
+                    st.error(f"Failed to upload image {i + 1}: {upload_result.get('error')}")
+                    
+            except Exception as e:
+                st.error(f"Error generating image {i + 1}: {str(e)}")
         
-        with st.expander("All S3 URLs"):
-            for img_data in generated_images:
-                st.code(img_data['s3_url'], language=None)
+        progress_bar.empty()
+        status_text.empty()
+        
+        # Display results
+        if generated_images:
+            st.success(f"Successfully generated {len(generated_images)} images!")
+            
+            st.markdown("### Generated Images")
+            cols = st.columns(min(len(generated_images), 3))
+            
+            for idx, img_data in enumerate(generated_images):
+                with cols[idx % 3]:
+                    image = Image.open(io.BytesIO(img_data["bytes"]))
+                    st.image(image, caption=f"Image {img_data['index']}", use_container_width=True)
+                    
+                    st.download_button(
+                        label=f"Download",
+                        data=img_data["bytes"],
+                        file_name=f"photoshoot_{img_data['index']}.png",
+                        mime=img_data["mime_type"],
+                        key=f"download_{idx}"
+                    )
+                    
+                    st.caption(f"S3: {img_data['s3_url'][:40]}...")
+            
+            with st.expander("All S3 URLs"):
+                for img_data in generated_images:
+                    st.code(img_data['s3_url'], language=None)

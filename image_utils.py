@@ -45,7 +45,10 @@ IMAGE_TYPES = {
     
     # Legacy types
     "accessory": "Accessory reference (legacy)",
-    "new_item": "New item upload (temporary)"
+    "new_item": "New item upload (temporary)",
+    
+    # Quick Fix
+    "quick_fix": "Quick Fix reference images"
 }
 
 
@@ -109,7 +112,10 @@ class S3ImageHandler:
             "hair": "hair-refs",
             
             # Legacy
-            "accessory": "accessory-refs"
+            "accessory": "accessory-refs",
+            
+            # Quick Fix
+            "quick_fix": "quick-fix-refs"
         }
         
         return folder_map.get(image_type, "photoshoot-refs")
